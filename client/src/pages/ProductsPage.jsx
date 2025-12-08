@@ -148,7 +148,7 @@ export default function ProductsPage() {
   // Transform products data to include category name
   const dataForTable = products.map((product) => ({
     ...product,
-    categoryName: product.categoryId ? categoryMap[product.categoryId] || `ID: ${product.categoryId}` : "No Category"
+    categoryName: product.categoryId ? categoryMap[product.categoryId] : "No Category"
   }));
 
   const columns = [

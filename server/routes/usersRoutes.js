@@ -1,5 +1,5 @@
 import express from "express";
-import { getRecord, updateRecord, createRecord } from "../jsonBin.js";
+import { getRecord, updateRecord} from "../jsonBin.js";
 // import { getRecord, updateRecord } from "../jsonbinClient.js";
 import { validateUserPayload, getNextUserId } from "../models/usersModel.js";
 
