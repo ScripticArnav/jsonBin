@@ -30,6 +30,30 @@ export default function UsersPage() {
     })();
   }, []);
 
+  // async function loadUsers() {
+  //   if (!config) return;
+  //   try {
+  //     setStatus("Loading users...");
+  //     const endpoint = `${API_BASE}${config.apiPath || "/users"}`;
+  //     const res = await fetch(endpoint);
+  //     const data = await res.json();
+  //     if (!res.ok) throw new Error(data.message || "Failed to load users");
+
+  //     const sorted = [...data].sort((a, b) => {
+  //       const aId = Number(a.id ?? 0);
+  //       const bId = Number(b.id ?? 0);
+  //       return aId - bId;
+  //     });
+
+  //     setUsers(sorted);
+  //     setStatus("Users loaded");
+  //   } catch (err) {
+  //     console.error(err);
+  //     setStatus("Failed to load users: " + err.message);
+  //   }
+  // }
+
+  // inside UsersPage
   async function loadUsers() {
     if (!config) return;
     try {
@@ -39,7 +63,24 @@ export default function UsersPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Failed to load users");
 
-      const sorted = [...data].sort((a, b) => {
+      console.log("DEBUG: raw users from API:", data);
+      console.log("DEBUG: columns config:", config.columns);
+
+      // Normalize: ensure row has 'id' if config.columns expect it
+      const norm = (data || []).map((u) => {
+        // shallow copy
+        const copy = { ...u };
+        if (
+          (config.columns || []).some((c) => c.accessor === "id") &&
+          copy.id == null
+        ) {
+          // if backend gives _id, set id = _id
+          if (copy._id) copy.id = copy._id;
+        }
+        // also ensure categoryName etc. handled elsewhere
+        return copy;
+      });
+      const sorted = [...norm].sort((a, b) => {
         const aId = Number(a.id ?? 0);
         const bId = Number(b.id ?? 0);
         return aId - bId;
