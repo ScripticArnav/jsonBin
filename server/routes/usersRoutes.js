@@ -1,6 +1,7 @@
 import express from "express";
 import mongoose from "mongoose";
 import User from "../models/usersModel.js";
+import Material from "../models/materialsModel.js";
 
 const router = express.Router();
 
@@ -28,6 +29,19 @@ async function getNextUserId() {
   }
 
   return lastUser.id + 1;
+}
+
+async function getNextMaterialId() {
+  const lastMaterial = await Material.findOne({ id: { $ne: null } })
+    .sort({ id: -1 })
+    .select("id")
+    .lean();
+
+  if (!lastMaterial || lastMaterial.id == null) {
+    return 1;
+  }
+
+  return lastMaterial.id + 1;
 }
 
 router.get("/", async (req, res) => {
@@ -60,6 +74,25 @@ router.post("/", async (req, res) => {
       phone,
       ...rest
     });
+
+    // Also save to materials collection
+    try {
+      const materialNextId = await getNextMaterialId();
+      await Material.create({
+        id: materialNextId,
+        name: name,
+        description: `User: ${name} (${email})`,
+        ...rest,
+        // Store reference to original user
+        userId: user._id,
+        userEmail: email,
+        userPhone: phone
+      });
+      console.log(`✅ Also saved user data to materials collection`);
+    } catch (materialErr) {
+      // Don't fail the user creation if materials save fails
+      console.warn("⚠️ Failed to save to materials collection:", materialErr.message);
+    }
 
     res.status(201).json(user);
   } catch (err) {

@@ -10,6 +10,7 @@ import categoriesRoutes from "./routes/categoriesRoutes.js";
 import productsRoutes from "./routes/productRoutes.js";
 import ordersRoutes from "./routes/ordersRoutes.js";
 import couponsRoutes from "./routes/couponRoutes.js";
+import materialsRoutes from "./routes/materialsRoutes.js";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -23,6 +24,7 @@ app.use("/api/categories", categoriesRoutes);
 app.use("/api/products", productsRoutes);
 app.use("/api/orders", ordersRoutes);
 app.use("/api/coupons", couponsRoutes);
+app.use("/api/materials", materialsRoutes);
 
 app.get("/", (req, res) => {
   res.json({ message: "Mongo CRUD API running" });
