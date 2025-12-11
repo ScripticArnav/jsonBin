@@ -25,8 +25,8 @@ export default function FieldRenderer({ field, values, onChange }) {
       let existingItems = [];
       if (existingRes.ok) {
         const existingData = await existingRes.json();
-        existingItems = Array.isArray(existingData) 
-          ? existingData 
+        existingItems = Array.isArray(existingData)
+          ? existingData
           : existingData.items || existingData.record || existingData.data || [];
         console.log(`📋 Found ${existingItems.length} existing items`);
       } else {
