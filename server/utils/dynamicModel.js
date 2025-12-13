@@ -1,183 +1,153 @@
+// dynamic-model-loader.js
 import mongoose from "mongoose";
 import axios from "axios";
 
-// Prefer env override so deployments can point to a different JSON source
-const REMOTE_CONFIG_URL =
+const CONFIG_URL =
   process.env.REMOTE_CONFIG_URL ||
   "https://api.jsonbin.io/v3/b/693a9bbad0ea881f4021b07d";
 
 let models = {};
-let lastConfigHash = "";
-let configs = {};
-let refreshInterval = null;
 
-function hash(obj) {
-  return JSON.stringify(obj);
-}
+/**
+ * Ensure mongoose is connected. If not connected, attempt to connect using
+ * process.env.MONGO_URI. Throws an error if there's no URI or the connection fails.
+ */
+async function ensureConnected() {
+  const ready = mongoose.connection.readyState; // 0 = disconnected, 1 = connected, 2 = connecting, 3 = disconnecting
+  if (ready === 1) return; // already connected
 
-function resolveMongooseType(typeName) {
-  if (!typeName || typeof typeName !== "string") {
-    return mongoose.Schema.Types.Mixed;
+  const uri = process.env.MONGO_URI;
+  if (!uri) {
+    throw new Error(
+      "MONGO_URI is not set. Set process.env.MONGO_URI or connect mongoose before calling loadModels()."
+    );
   }
 
-  switch (typeName.toLowerCase()) {
-    case "string":
-      return String;
-    case "number":
-      return Number;
-    case "boolean":
-      return Boolean;
-    case "date":
-      return Date;
-    case "objectid":
-      return mongoose.Schema.Types.ObjectId;
-    case "array":
-      return Array;
-    case "mixed":
-      return mongoose.Schema.Types.Mixed;
-    default:
-      console.warn(`⚠ Unknown type "${typeName}", fallback to Mixed`);
-      return mongoose.Schema.Types.Mixed;
+  console.log("⏳ Mongoose not connected — attempting to connect...");
+  try {
+    // mongoose v6+ doesn't require these options, but harmless to include
+    await mongoose.connect(uri, {
+      // useNewUrlParser: true,
+      // useUnifiedTopology: true,
+      // serverSelectionTimeoutMS: 5000
+    });
+    console.log("🔌 Mongoose connected.");
+  } catch (err) {
+    console.error("❌ Mongoose connection failed:", err.message);
+    throw err;
   }
 }
 
-function convertFieldDef(def) {
-  if (Array.isArray(def)) return [convertFieldDef(def[0])];
-  if (typeof def === "string") return { type: resolveMongooseType(def) };
+/**
+ * Resolve simple type names from config to mongoose types.
+ */
+function resolveType(typeName) {
+  const types = {
+    string: String,
+    number: Number,
+    boolean: Boolean,
+    date: Date,
+    objectid: mongoose.Schema.Types.ObjectId,
+    array: Array,
+    mixed: mongoose.Schema.Types.Mixed,
+    // add others if needed: buffer, decimal128, map, etc.
+  };
+  return types[typeName?.toLowerCase()] || mongoose.Schema.Types.Mixed;
+}
 
-  if (typeof def === "object" && def !== null) {
-    if ("type" in def) {
+/**
+ * Convert a config field definition into a mongoose-compatible definition.
+ * Handles:
+ *  - simple string types: "string" -> { type: String }
+ *  - arrays: ["string"] -> [{ type: String }]
+ *  - objects with `type` key: { type: "string", required: true }
+ *  - plain nested objects (sub-doc schemas)
+ */
+function convertField(def) {
+  if (Array.isArray(def)) return [convertField(def[0])];
+
+  if (typeof def === "string") return { type: resolveType(def) };
+
+  if (typeof def === "object") {
+    if (def.type) {
       const { type, ...rest } = def;
 
-      if (typeof type === "string") {
-        return { type: resolveMongooseType(type), ...rest };
+      // If `type` itself is a plain object, treat it as nested schema
+      if (typeof type === "object" && !Array.isArray(type)) {
+        return buildSchemaFields(type);
       }
 
-      if (Array.isArray(type)) {
-        return { type: [convertFieldDef(type[0])], ...rest };
-      }
-
-      if (typeof type === "object") {
-        return { type: convertFields(type), ...rest };
-      }
-
-      return { type: mongoose.Schema.Types.Mixed, ...rest };
+      return { type: resolveType(type), ...rest };
     }
 
-    return convertFields(def);
+    // Plain object without `type` -> nested sub-document schema
+    return buildSchemaFields(def);
   }
 
-  return { type: mongoose.Schema.Types.Mixed };
+  return def;
 }
 
-function convertFields(fields) {
+function buildSchemaFields(fields) {
   const result = {};
-  for (const key of Object.keys(fields)) {
-    result[key] = convertFieldDef(fields[key]);
+  for (const [key, value] of Object.entries(fields)) {
+    result[key] = convertField(value);
   }
   return result;
 }
 
-async function buildModels() {
-  console.log("🔄 Building models from configuration...");
-
-  // Delete old models so schema changes are applied on rebuilds
-  for (const modelName of Object.keys(models)) {
-    if (mongoose.modelNames().includes(modelName)) {
-      try {
-        mongoose.deleteModel(modelName);
-        console.log(`🧹 Deleted existing model: ${modelName}`);
-      } catch (err) {
-        console.warn(`⚠ Could not delete model ${modelName}:`, err.message);
-      }
-    }
+/**
+ * Create or reuse an existing model to avoid OverwriteModelError.
+ * If the model already exists, we return the existing one and log a warning.
+ */
+function createOrGetModel(name, schema) {
+  if (mongoose.models[name]) {
+    // Model already exists (likely from a previous load); reuse it.
+    console.warn(`⚠️ Model "${name}" already exists. Reusing existing model.`);
+    return mongoose.model(name);
   }
 
-  models = {};
-
-  Object.entries(configs).forEach(([modelName, config]) => {
-    const { schema, options = {}, collection } = config;
-
-    if (!schema) {
-      console.warn(`❌ Missing schema for model: ${modelName}`);
-      return;
-    }
-
-    const schemaObj = convertFields(schema);
-    const schemaOptions = { timestamps: true, ...options };
-    const mongooseSchema = new mongoose.Schema(schemaObj, schemaOptions);
-
-    const Model = mongoose.model(
-      modelName,
-      mongooseSchema,
-      collection || undefined
-    );
-
-    models[modelName] = Model;
-
-    console.log(
-      `📌 Model generated: ${modelName} (collection: ${Model.collection.collectionName})`
-    );
-  });
-
-  console.log("✨ All models built successfully.");
-  return models;
+  return mongoose.model(name, schema);
 }
 
-async function fetchConfig() {
-  const res = await axios.get(REMOTE_CONFIG_URL);
-  let json = res.data;
-
-  // Remote JSON may wrap data under .data (e.g., { _id, name, data: { ... } })
-  if (json?.data && typeof json.data === "object") {
-    json = json.data;
-  }
-
-  // JSONBin v3 returns { record: { ... } }
-  if (json?.record && typeof json.record === "object") {
-    json = json.record;
-  }
-
-  return json;
-}
-
-async function loadModels() {
+/**
+ * Main loader: fetches config, builds schemas, and registers models.
+ * It will ensure a mongoose connection exists (tries to connect using MONGO_URI if needed).
+ */
+async function loadModels({ autoConnect = true } = {}) {
   try {
-    console.log("🌍 Loading remote JSON config...");
-    const conf = await fetchConfig();
-    const newHash = hash(conf);
+    console.log("🌍 Loading models from JSONBin...");
 
-    if (newHash !== lastConfigHash) {
-      console.log("⚡ Remote JSON changed → Rebuilding models");
-      configs = conf;
-      lastConfigHash = newHash;
-      await buildModels();
-    } else {
-      console.log("✔ Remote JSON unchanged — using cached models");
+    if (autoConnect) {
+      await ensureConnected();
+    } else if (mongoose.connection.readyState !== 1) {
+      throw new Error(
+        "Mongoose not connected. Set autoConnect=true or connect mongoose before calling loadModels()."
+      );
     }
 
-    // Auto-refresh every 60s
-    if (!refreshInterval) {
-      refreshInterval = setInterval(async () => {
-        try {
-          const latest = await fetchConfig();
-          const latestHash = hash(latest);
+    const res = await axios.get(CONFIG_URL);
+    const config = res.data?.record || res.data;
 
-          if (latestHash !== lastConfigHash) {
-            console.log("🔁 Remote JSON updated → Rebuilding models live");
-            configs = latest;
-            lastConfigHash = latestHash;
-            await buildModels();
-          }
-        } catch (err) {
-          console.error("🔴 Auto-refresh error:", err.message);
-        }
-      }, 60000);
+    if (!config || typeof config !== "object") {
+      throw new Error("Invalid remote config — expected an object of model configs.");
     }
 
+    for (const [modelName, modelConfig] of Object.entries(config)) {
+      if (modelName === "metadata" || !modelConfig?.schema) continue;
+
+      const schemaFields = buildSchemaFields(modelConfig.schema || {});
+      const schemaOptions = { timestamps: true, ...modelConfig.options };
+      const mongooseSchema = new mongoose.Schema(schemaFields, schemaOptions);
+
+      // Use createOrGetModel to avoid OverwriteModelError
+      models[modelName] = createOrGetModel(modelName, mongooseSchema);
+      console.log(`✅ Model created/loaded: ${modelName}`);
+    }
+
+    console.log("✨ All models loaded successfully");
     return models;
   } catch (err) {
-    console.error("❌ Cannot load dynamic models:", err.message);
+    console.error("❌ Failed to load models:", err?.message || err);
     return models;
   }
 }

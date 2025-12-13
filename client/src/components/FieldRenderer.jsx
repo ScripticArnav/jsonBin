@@ -455,7 +455,7 @@ export default function FieldRenderer({ field, values, onChange }) {
                 }}
               >
                 {t}{" "}
-                <button onClick={() => change(arr.filter((x) => x !== t))}>
+                <button type="button" onClick={() => change(arr.filter((x) => x !== t))}>
                   x
                 </button>
               </span>
@@ -466,6 +466,7 @@ export default function FieldRenderer({ field, values, onChange }) {
             onChange={(e) => setTagInput(e.target.value)}
           />
           <button
+            type="button"
             onClick={() => {
               if (!tagInput) return;
               change([...arr, tagInput]);
@@ -685,6 +686,46 @@ export default function FieldRenderer({ field, values, onChange }) {
           onFocus={(e) => e.target.style.borderColor = "#007bff"}
           onBlur={(e) => e.target.style.borderColor = "#ddd"}
         />
+      );
+
+    case "imagelink":
+      return (
+        <div>
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) handleUploadFile(file);
+            }}
+            disabled={uploading}
+            style={{
+              padding: "10px 12px",
+              border: "1px solid #ddd",
+              borderRadius: "6px",
+              fontSize: "14px",
+              width: "100%",
+              boxSizing: "border-box",
+              cursor: uploading ? "not-allowed" : "pointer"
+            }}
+          />
+          {uploading && <p style={{ color: "#007bff", marginTop: "8px" }}>⏳ Uploading...</p>}
+          {value && (
+            <div style={{ marginTop: "12px" }}>
+              <img 
+                src={value} 
+                alt="preview" 
+                style={{
+                  maxWidth: "100%",
+                  maxHeight: "200px",
+                  borderRadius: "6px",
+                  border: "1px solid #ddd"
+                }}
+                onError={() => console.error("Failed to load image:", value)}
+              />
+            </div>
+          )}
+        </div>
       );
   }
 }

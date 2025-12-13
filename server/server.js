@@ -15,13 +15,20 @@ import { connectDB } from "./db.js";
 
 // Dynamic models + routes
 import loadModels from "./utils/dynamicModel.js";
-import generateCRUDRoutes from "./utils/dynamicRouter.js";
+import generateCRUDRoutes from "./utils/generateCRUDRoutes.js";
+
+// Upload route
+import uploadRoutes from "./routes/uploadRoutes.js";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
 
 app.use(cors());
 app.use(express.json());
+app.use(express.static("public"));
+
+// Upload endpoint for images
+app.use("/api/upload", uploadRoutes);
 
 // API routes (static)
 // app.use("/api/users", usersRoutes);
