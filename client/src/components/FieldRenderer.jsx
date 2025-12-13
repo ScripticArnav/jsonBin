@@ -359,8 +359,8 @@ export default function FieldRenderer({ field, values, onChange }) {
             <option value="">— select —</option>
             {resolvedOptions.map((opt, i) => {
               if (typeof opt === "object" && opt !== null) {
-                // const optValue = opt.value ?? opt.id ?? opt._id ?? opt.userId ?? opt[apiTitle];
-                // const optLabel = opt.label ?? opt.name ?? opt[apiTitle] ?? JSON.stringify(opt);
+                const optValue = opt.value ?? opt.id ?? opt._id ?? opt.userId ?? (apiTitle ? opt[apiTitle] : "");
+                const optLabel = opt.label ?? opt.name ?? (apiTitle ? opt[apiTitle] : JSON.stringify(opt));
                 return (
                   <option key={i} value={optValue ?? ""}>
                     {optLabel}
