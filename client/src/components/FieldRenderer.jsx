@@ -175,15 +175,38 @@ export default function FieldRenderer({ field, values, onChange }) {
 
   // upload helper (image/file)
   async function handleUploadFile(file) {
-    if (!field.uploadApi) return;
+    // allow default upload endpoint when not provided in field config
+    const uploadPath = field.uploadApi || "/api/upload";
     setUploading(true);
     try {
       const fd = new FormData();
       fd.append("file", file);
-      const res = await fetch(field.uploadApi, { method: "POST", body: fd });
-      const json = await res.json();
-      const url = json.url || json.data?.url || json.record?.url || json.path;
-      if (url) change(url);
+
+      const viteApi = import.meta.env.VITE_API_URL || "";
+      // derive server origin (strip any trailing /api)
+      const serverOrigin = (viteApi || window.location.origin).replace(/\/api\/?$/, "").replace(/\/$/, "");
+
+      const uploadUrl = /^https?:\/\//i.test(uploadPath)
+        ? uploadPath
+        : uploadPath.startsWith("/")
+        ? serverOrigin + uploadPath
+        : serverOrigin + "/" + uploadPath;
+
+      const res = await fetch(uploadUrl, { method: "POST", body: fd });
+      const json = await res.json().catch(() => ({}));
+
+      let url = json.url || json.data?.url || json.record?.url || json.path;
+      if (url) {
+        // server might return "/public/uploads/.." — normalize to served path
+        if (url.startsWith("/public/")) url = url.replace(/^\/public/, "");
+
+        if (!/^https?:\/\//i.test(url)) {
+          url = url.startsWith("/") ? serverOrigin + url : serverOrigin + "/" + url;
+        }
+        change(url);
+      } else {
+        console.warn("Upload succeeded but no url returned", json);
+      }
     } catch (e) {
       console.error("upload failed", e);
     } finally {
@@ -480,6 +503,8 @@ export default function FieldRenderer({ field, values, onChange }) {
     }
 
     case "imageLink":
+    case "imagelink":
+    case "image":
     case "file": {
       return (
         <div>
@@ -699,45 +724,7 @@ export default function FieldRenderer({ field, values, onChange }) {
         />
       );
 
-    case "imagelink":
-      return (
-        <div>
-          <input
-            type="file"
-            accept="image/*"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) handleUploadFile(file);
-            }}
-            disabled={uploading}
-            style={{
-              padding: "10px 12px",
-              border: "1px solid #ddd",
-              borderRadius: "6px",
-              fontSize: "14px",
-              width: "100%",
-              boxSizing: "border-box",
-              cursor: uploading ? "not-allowed" : "pointer"
-            }}
-          />
-          {uploading && <p style={{ color: "#007bff", marginTop: "8px" }}>⏳ Uploading...</p>}
-          {value && (
-            <div style={{ marginTop: "12px" }}>
-              <img 
-                src={value} 
-                alt="preview" 
-                style={{
-                  maxWidth: "100%",
-                  maxHeight: "200px",
-                  borderRadius: "6px",
-                  border: "1px solid #ddd"
-                }}
-                onError={() => console.error("Failed to load image:", value)}
-              />
-            </div>
-          )}
-        </div>
-      );
+    
   }
 }
 

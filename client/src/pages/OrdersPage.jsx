@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import EntityTable from "../components/EntityTable.jsx";
 import EntityForm from "../components/EntityForm.jsx";
-import {loadEntityConfig} from "./config.js";
+import { loadEntityConfig } from "./config.js";
+import { setByPath } from "../utils/objPath.js";
 
-const API_BASE = import.meta.env.VITE_API_URL;
+const API_BASE = (import.meta.env.VITE_API_URL || `${window.location.protocol}//${window.location.hostname}:4000/api`).replace(/\/$/, "");
 
 export default function OrdersPage() {
   const [items, setItems] = useState([]);
@@ -48,7 +49,11 @@ export default function OrdersPage() {
   }, [config]);
 
   function handleChange(field, value) {
-    setFormValues((prev) => ({ ...prev, [field]: value }));
+    setFormValues((prev) => {
+      const copy = JSON.parse(JSON.stringify(prev || {}));
+      setByPath(copy, field, value);
+      return copy;
+    });
   }
 
   function resetForm() {

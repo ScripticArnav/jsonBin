@@ -4,7 +4,7 @@ import axios from "axios";
 
 const CONFIG_URL =
   process.env.REMOTE_CONFIG_URL ||
-  "https://api.jsonbin.io/v3/b/693a9bbad0ea881f4021b07d";
+  "https://api.jsonbin.io/v3/b/69411118d0ea881f402cbde2/latest";
 
 let models = {};
 
@@ -16,12 +16,18 @@ async function ensureConnected() {
   const ready = mongoose.connection.readyState; // 0 = disconnected, 1 = connected, 2 = connecting, 3 = disconnecting
   if (ready === 1) return; // already connected
 
-  const uri = process.env.MONGO_URI;
+  const uri = process.env.MONGO_URI || process.env.MONGODB_URI || process.env.MONGO_URL;
   if (!uri) {
     throw new Error(
-      "MONGO_URI is not set. Set process.env.MONGO_URI or connect mongoose before calling loadModels()."
+      "MONGO_URI / MONGODB_URI is not set. Set process.env.MONGO_URI or process.env.MONGODB_URI."
     );
   }
+
+  // Log masked host for easier debugging (do not print credentials)
+  try {
+    const masked = uri.replace(/:[^:@]+@/, ':***@');
+    console.log(`🔑 Using MongoDB URI: ${masked.split('/').slice(0,3).join('/')}`);
+  } catch (e) {}
 
   console.log("⏳ Mongoose not connected — attempting to connect...");
   try {
@@ -127,16 +133,25 @@ async function loadModels({ autoConnect = true } = {}) {
 
     const res = await axios.get(CONFIG_URL);
     const config = res.data?.record || res.data;
+    console.log("🌐 Remote config fetched. Top-level keys:", Object.keys(config || {}));
 
     if (!config || typeof config !== "object") {
       throw new Error("Invalid remote config — expected an object of model configs.");
     }
 
     for (const [modelName, modelConfig] of Object.entries(config)) {
-      if (modelName === "metadata" || !modelConfig?.schema) continue;
+      if (modelName === "metadata") continue;
 
-      const schemaFields = buildSchemaFields(modelConfig.schema || {});
-      const schemaOptions = { timestamps: true, ...modelConfig.options };
+      // Support new combined JSON shape where schema lives under modelConfig.backend.schema
+      const backend = modelConfig.backend || modelConfig;
+      const schemaDef = backend.schema || modelConfig.schema;
+      if (!schemaDef) {
+        console.warn(`ℹ️ Skipping model ${modelName} — no schema found`);
+        continue;
+      }
+
+      const schemaFields = buildSchemaFields(schemaDef || {});
+      const schemaOptions = { timestamps: true, ...backend.options, ...modelConfig.options };
       const mongooseSchema = new mongoose.Schema(schemaFields, schemaOptions);
 
       // Use createOrGetModel to avoid OverwriteModelError

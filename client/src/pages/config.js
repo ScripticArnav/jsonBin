@@ -1,5 +1,6 @@
 const CONFIG_URL =
-  "https://api.jsonbin.io/v3/b/69343188d0ea881f4016c598/latest";
+  import.meta.env.VITE_CONFIG_URL ||
+  "https://api.jsonbin.io/v3/b/69411118d0ea881f402cbde2/latest";
 
 async function loadEntityConfig(entityKey, setStatus) {
   try {
@@ -9,11 +10,17 @@ async function loadEntityConfig(entityKey, setStatus) {
     const raw = await res.json();
 
     const record = raw.record || raw;
-    const cfg = record.config?.[entityKey];
 
-    if (!cfg) {
+    // Support two shapes:
+    // 1) legacy: record.config.<entityKey> -> config used directly
+    // 2) combined: record.<entityKey>.frontend -> frontend config
+    const entityDef = record[entityKey] || record.config?.[entityKey];
+    if (!entityDef) {
       throw new Error(`${entityKey} config not found in JSON`);
     }
+
+    // Prefer frontend block if present
+    const cfg = entityDef.frontend || entityDef.config || entityDef;
 
     // form ke liye initial values
     const initialForm = {};
